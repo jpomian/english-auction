@@ -1,11 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.4;
 
+contract AuctionHouse {
+    address [] public registeredAuctions;
+    event ContractCreated(address contractAddress);
+    
+    function createAuction(uint _biddingTime, uint _bidBond) public {
+        address newAuction = address(new Auction(payable(msg.sender), _biddingTime, _bidBond));
+        emit ContractCreated(newAuction);
+        registeredAuctions.push(newAuction);
+    }
+    
+    function getDeployedAuctions() public view returns (address[] memory) {
+        return registeredAuctions;
+    }
+}
+
+
 contract Auction {
     address payable public beneficiary;
     uint public auctionEndTime;
     uint public bidBondInEthers;
-    string public hashOfAuction;
 
     address public highestBidder;
 
@@ -28,11 +43,11 @@ contract Auction {
     error SellerCantBeBuyer(address beneficiary);
 
   
-    constructor(address payable _beneficiary, uint _biddingTime, uint _bidBond, string memory _hashOfAuction) {
+    constructor(address payable _beneficiary, uint _biddingTime, uint _bidBond) {
         beneficiary = _beneficiary;
         auctionEndTime = block.timestamp + (_biddingTime * 60 seconds);
         bidBondInEthers = _bidBond * 1 ether;
-        hashOfAuction = _hashOfAuction;
+
     }
 
     function deposit() public payable {
@@ -63,8 +78,8 @@ contract Auction {
         if(isEligible[msg.sender] == false)
             revert UserIsNotEligible(msg.sender);
 
-        if (highestBid != 0) 
-            payable(highestBidder).transfer(highestBid);
+        if (highestBid != 0)
+            depositCashback[highestBidder]+=highestBid;
      
         highestBidder = msg.sender;
         highestBid = msg.value;
@@ -73,15 +88,15 @@ contract Auction {
     }
 
     
-    function withdrawBidBond() public returns (bool) {
+    function withdraw() public returns (bool) {
         
         if (ended == false)
             revert AuctionNotYetEnded();
-            
-        if(msg.sender == highestBidder)
-            depositCashback[msg.sender] = 0;
         
         uint amount = depositCashback[msg.sender];
+        
+        if(msg.sender == highestBidder)
+            amount-=highestBid;
         
         if (amount > 0) {
             depositCashback[msg.sender] = 0;
