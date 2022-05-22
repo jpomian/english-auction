@@ -1,124 +1,96 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity ^0.8.4;
 
-contract AuctionHouse {
-    address [] public registeredAuctions;
-    event ContractCreated(address contractAddress);
-    
-    function createAuction(uint _biddingTime, uint _bidBond) public {
-        address newAuction = address(new Auction(payable(msg.sender), _biddingTime, _bidBond));
-        emit ContractCreated(newAuction);
-        registeredAuctions.push(newAuction);
-    }
-    
-    function getDeployedAuctions() public view returns (address[] memory) {
-        return registeredAuctions;
-    }
-}
+pragma solidity ^0.8;
 
+contract Auction{
 
-contract Auction {
     address payable public beneficiary;
-    uint public auctionEndTime;
-    uint public bidBondInEthers;
-
+    uint256 public auctionEndTime;
+    uint256 public bidBond;
+    uint256 public startingBid;
+    
     address public highestBidder;
-
-    uint public highestBid;
-
-    mapping(address => uint) depositCashback;
+    uint256 public highestBid; 
+    bool hasEnded;
+    
+    mapping(address => uint256) depositCashback;
     mapping(address => bool) isEligible;
-
-    bool ended;
-
-    event HighestBidIncreased(address bidder, uint amount);
-    event AuctionEnded(address winner, uint amount);
-
-    error AuctionAlreadyEnded();
-    error BidNotHighEnough(uint highestBid);
-    error AuctionNotYetEnded();
-    error AuctionEndAlreadyCalled();
-    error IncorrectBidBondValue(uint bidBondInEthers);
-    error UserIsNotEligible(address user);
-    error SellerCantBeBuyer(address beneficiary);
-
-  
-    constructor(address payable _beneficiary, uint _biddingTime, uint _bidBond) {
+    
+    event highestBidIncreased(address bidder, uint256 amount);
+    event auctionEnded(address winner, uint256 amount);
+    
+    constructor(address payable _beneficiary, uint256 _biddingTime, uint256 _bidBond, uint256 _startingBid) {
         beneficiary = _beneficiary;
         auctionEndTime = block.timestamp + (_biddingTime * 60 seconds);
-        bidBondInEthers = _bidBond * 1 ether;
-
+        bidBond = _bidBond;
+        startingBid = _startingBid;
     }
 
     function deposit() public payable {
         
-        if (block.timestamp > auctionEndTime)
-            revert AuctionAlreadyEnded();
-            
-        if(msg.value * 1 ether != bidBondInEthers)
-            revert IncorrectBidBondValue(bidBondInEthers);
-            
-        if(msg.sender == beneficiary)
-            revert SellerCantBeBuyer(beneficiary);
-            
+        require(auctionEndTime > block.timestamp, "Auction has ended."); 
         
+        require(msg.sender != beneficiary, "Seller cannot be a buyer.");
+
+        require(!isEligible[msg.sender], "User already made a deposit."); 
+
+        require(msg.value >= bidBond, "Insufficient amount of ether was sent for deposit."); 
+
+
         isEligible[msg.sender] = true;
         depositCashback[msg.sender] += msg.value;
         
     }
-    
+
     function bid() public payable {
-     
-        if (block.timestamp > auctionEndTime)
-            revert AuctionAlreadyEnded();
 
-        if (msg.value <= highestBid)
-            revert BidNotHighEnough(highestBid);
-        
-        if(isEligible[msg.sender] == false)
-            revert UserIsNotEligible(msg.sender);
+        uint256 highestIncrementedBid = highestBid * 110 / 100;
 
-        if (highestBid != 0)
-            depositCashback[highestBidder]+=highestBid;
-     
-        highestBidder = msg.sender;
-        highestBid = msg.value;
-        emit HighestBidIncreased(msg.sender, msg.value);
-    
-    }
+        require(auctionEndTime > block.timestamp, "Auction has ended.");
 
-    
-    function withdraw() public returns (bool) {
-        
-        if (ended == false)
-            revert AuctionNotYetEnded();
-        
-        uint amount = depositCashback[msg.sender];
-        
-        if(msg.sender == highestBidder)
-            amount-=highestBid;
-        
-        if (amount > 0) {
-            depositCashback[msg.sender] = 0;
+        require(msg.sender != beneficiary, "Seller cannot be a buyer."); 
 
-            if (!payable(msg.sender).send(amount)) {
-                depositCashback[msg.sender] = amount;
-                return false;
-            }
+        require(msg.sender != highestBidder, "Your bid is already top bid."); 
+
+        require(isEligible[msg.sender], "To take part in auction, one must deposit required amount of ether."); 
+
+        if(msg.value >= highestIncrementedBid) {
+            depositCashback[msg.sender] += msg.value;
+            highestBidder = msg.sender;
+            highestBid = msg.value;
+            emit highestBidIncreased(msg.sender, msg.value);
         }
+        else {
+            revert("Bid should be at least 10% higher than current highest bid.");
+        }
+     }
+     function withdraw() public payable returns(bool) {
+
+        //require(hasEnded,"You Cannot Withdraw Until The Auction Has Ended");
+
+        uint256 amount = depositCashback[msg.sender];
+
+        if(amount > 0) {
+            depositCashback[msg.sender] = 0;
+        }
+        
+        if(!payable(msg.sender).send(amount)) {
+            depositCashback[msg.sender] = amount;
+        }
+
         return true;
     }
 
     function auctionEnd() public {
-        
-        if (block.timestamp < auctionEndTime)
-            revert AuctionNotYetEnded();
-        if (ended)
-            revert AuctionEndAlreadyCalled();
-       
-        ended = true;
-        emit AuctionEnded(highestBidder, highestBid);
 
+        require(block.timestamp > auctionEndTime, "The Auction Cannot End Before The Specified Time");
+
+        if(hasEnded)
+            revert("Auction is already over.");
+        
+        hasEnded = true;
+
+        emit auctionEnded(highestBidder, highestBid);
         beneficiary.transfer(highestBid);
     }
 }
