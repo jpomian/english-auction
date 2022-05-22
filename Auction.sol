@@ -54,6 +54,8 @@ contract Auction{
 
         require(isEligible[msg.sender], "To take part in auction, one must deposit required amount of ether."); 
 
+        require(msg.value >= startingBid, "Your bid is smaller than the starting bid."); 
+
         if(msg.value >= highestIncrementedBid) {
             depositCashback[msg.sender] += msg.value;
             highestBidder = msg.sender;
