@@ -19,36 +19,34 @@ contract Auction{
     event highestBidIncreased(address bidder, uint256 amount);
     event auctionEnded(address winner, uint256 amount);
     
-    constructor(address payable _beneficiary, uint256 _biddingTime, uint256 _bidBond, uint256 _startingBid) {
-        beneficiary = _beneficiary;
+    constructor(uint256 _biddingTime, uint256 _bidBond, uint256 _startingBid) {
+        beneficiary = payable(msg.sender);
         auctionEndTime = block.timestamp + (_biddingTime * 60 seconds);
         bidBond = _bidBond;
         startingBid = _startingBid;
     }
 
-    function deposit() public payable {
-        
-        require(auctionEndTime > block.timestamp, "Auction has ended."); 
-        
+    modifier restrictedBy {
+        require(auctionEndTime > block.timestamp, "Auction has ended.");
+
         require(msg.sender != beneficiary, "Seller cannot be a buyer.");
+        _;
+    }
+
+    function deposit() public payable restrictedBy {
 
         require(!isEligible[msg.sender], "User already made a deposit."); 
 
         require(msg.value >= bidBond, "Insufficient amount of ether was sent for deposit."); 
-
 
         isEligible[msg.sender] = true;
         depositCashback[msg.sender] += msg.value;
         
     }
 
-    function bid() public payable {
+    function bid() public payable restrictedBy {
 
         uint256 highestIncrementedBid = highestBid * 110 / 100;
-
-        require(auctionEndTime > block.timestamp, "Auction has ended.");
-
-        require(msg.sender != beneficiary, "Seller cannot be a buyer."); 
 
         require(msg.sender != highestBidder, "Your bid is already top bid."); 
 
@@ -68,7 +66,7 @@ contract Auction{
      }
      function withdraw() public payable returns(bool) {
 
-        //require(hasEnded,"You Cannot Withdraw Until The Auction Has Ended");
+        require(hasEnded || block.timestamp > auctionEndTime, "Withdrawal is available after auction end.");
 
         uint256 amount = depositCashback[msg.sender];
 
@@ -85,7 +83,9 @@ contract Auction{
 
     function auctionEnd() public {
 
-        require(block.timestamp > auctionEndTime, "The Auction Cannot End Before The Specified Time");
+        require(block.timestamp > auctionEndTime, "Auction can be ended only after specified time.");
+
+        require(msg.sender == beneficiary, "Only seller can end the auction process.");
 
         if(hasEnded)
             revert("Auction is already over.");
